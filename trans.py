@@ -6,6 +6,7 @@ from math import gcd
 
 from string import ascii_uppercase
 from typing import Any, Tuple, Union
+from typing_extensions import Self
 
 ASS = "→"
 L = "⌊"
@@ -472,7 +473,7 @@ class ControlFlow:
 	@property
 	def sanction(self) -> str: ...
 
-	def __enter__(self) -> ControlFlow:
+	def __enter__(self) -> Self:
 		Locator.target_code.write_ln(self.introduction)
 		return self
 
@@ -526,6 +527,10 @@ class For(ControlFlow):
 			del self._svar
 
 		return "End"
+
+	def Break(self):
+
+		self._svar.set(self._end + Const(1))
 
 def Else():
 	wraw("Else")
