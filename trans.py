@@ -6,7 +6,6 @@ from math import gcd
 
 from string import ascii_uppercase
 from typing import Any, Tuple, Union
-from typing_extensions import Self
 
 ASS = "→"
 L = "⌊"
@@ -62,7 +61,7 @@ class TargetCode:
 		self._lines.append(txt)
 
 	def compute_output(self) -> str:
-		return "\n:".join(self._lines)
+		return "\n".join(self._lines)
 
 	def output(self, file: TextIOWrapper):
 		file.write(self.compute_output())
@@ -118,14 +117,14 @@ class Var(BaseVar):
 	def __str__(self) -> str:
 		return self.val
 
-	def set(self, val: str):
-		Locator.target_code.write_ln(f"{val}→{self.addr}")
+	def set(self, val: NumVal):
+		Locator.target_code.write_ln(f"{get_num_val(val)}→{self.val}")
 
 	def incr(self):
-		self.set(ExprRoot(self.val + Const("1")).simplified_root().val)
+		self.set(self + Const(1))
 
 	def decr(self):
-		self.set(ExprRoot(self.val - Const("1")).simplified_root().val)
+		self.set(self - Const(1))
 
 	def __add__(self, other):
 		return Paren(Addition(self, other))
@@ -385,7 +384,7 @@ class SmallVar(Var):
 		Locator.small_vars.alloc(self._addr)
 
 		if init_val is not None:
-			self.set(init_val)
+			self.set(NumRaw(init_val))
 
 	@property
 	def addr(self) -> str:
@@ -404,7 +403,7 @@ class MedVar(Var):
 
 		self._addr = Locator.med_vars.get()
 		Locator.med_vars.alloc(self._addr)
-		self.set(init_val)
+		self.set(NumRaw(init_val))
 
 	@property
 	def addr(self) -> str:
@@ -445,7 +444,7 @@ class Struct(Var):
 		self._addr = SmallVar()
 		Locator.target_code.write_ln("{" + ",".join(ExprRoot(v).simplified_root().val for v in init_vals.values()))
 		Locator.target_code.write_ln("prgmHNALLOC")
-		self._addr.set("Rep")
+		self._addr.set(NumRaw("Rep"))
 		self._members: dict[str, StructMember] = {k: StructMember(self._addr.val, str(n)) for n, k in enumerate(init_vals.keys())}
 
 	def get_member(self, name: str) -> StructMember:
@@ -473,7 +472,7 @@ class ControlFlow:
 	@property
 	def sanction(self) -> str: ...
 
-	def __enter__(self) -> Self:
+	def __enter__(self) -> ControlFlow:
 		Locator.target_code.write_ln(self.introduction)
 		return self
 
