@@ -538,3 +538,6 @@ def Disp(var: NumVal or String or StringConst):
 
 def Input(prompt: String or StringConst, var: Var or String):
 	wraw(f"Input {prompt.val},{var.val}")
+
+true = Const(1)
+false = Const(0)
