@@ -360,6 +360,22 @@ class Const(Var):
 	def val(self) -> str:
 		return self._val
 
+class NumRaw(Var):
+
+	class NoAddr(Exception): ...
+
+	def __init__(self, text: str):
+
+		self._text = text
+
+	@property
+	def addr(self) -> str:
+		raise self.NoAddr
+
+	@property
+	def val(self) -> str:
+		return self._text
+
 class SmallVar(Var):
 
 	def __init__(self, init_val: str = None):
