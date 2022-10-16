@@ -72,11 +72,28 @@ class BaseLocator:
 
 		self.small_vars = VarPlanner("small vars", list(ascii_uppercase))
 		self.med_vars = VarPlanner("med vars", list(str(n) for n in range(1, 999 + 1)))
+		self.string_vars = VarPlanner("string vars", list(f"Chn{str(n)}" for n in range(9 + 1)))
 		self.target_code = TargetCode()
 
 Locator = BaseLocator()
 
-class Var:
+class BaseVar: ...
+
+class String(BaseVar):
+
+	def __init__(self) -> None:
+
+		self._val: str = Locator.string_vars.get()
+		Locator.string_vars.alloc(self._val)
+
+	def __str__(self) -> str:
+		return self._val
+
+	@property
+	def val(self) -> str:
+		return self._val
+
+class Var(BaseVar):
 
 	@property
 	def addr(self) -> str: ...
