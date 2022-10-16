@@ -93,6 +93,19 @@ class String(BaseVar):
 	def val(self) -> str:
 		return self._val
 
+class StringConst(BaseVar):
+
+	def __init__(self, text: str):
+
+		self._text = text
+
+	def __str__(self) -> str:
+		return self.val
+
+	@property
+	def val(self) -> str:
+		return '"' + self._text + '"'
+
 class Var(BaseVar):
 
 	@property
@@ -514,3 +527,14 @@ class If(ControlFlow):
 	@property
 	def sanction(self) -> str:
 		return "End"
+
+def Disp(var: NumVal or String or StringConst):
+	
+	if isinstance(var, NumVal):
+		wraw("Disp " + get_num_val(var))
+
+	elif isinstance(var, (String, StringConst)):
+		wraw("Disp " + var.val)
+
+def Input(prompt: String or StringConst, var: Var or String):
+	wraw(f"Input {prompt.val},{var.val}")
