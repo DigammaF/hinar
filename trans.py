@@ -31,13 +31,18 @@ class VarPlanner:
 
 		raise self.CannotGet(f"{self._name} cannot find an available element")
 
-	def alloc(self, e: str):
+	def alloc(self, e: str) -> str:
 		"""marks an element as unavailable"""
 
 		if e not in self._space:
 			raise self.ForeignElement(f"{e} is not in the space of {self._name} and therefore cannot be allocated by it")
 
 		self._allocated.add(e)
+		return e
+
+	def get_allocated(self) -> str:
+		"""returns an allocated element"""
+		return self.alloc(self.get())
 
 	def free(self, e: str):
 		"""marks an element as available"""
@@ -495,13 +500,15 @@ class SmallVar(Var):
 	def __del__(self):
 		Locator.small_vars.free(self._addr)
 
+	def deref(self) -> MedVar:
+		return MedVar(addr=self.val)
+
 class MedVar(Var):
 
-	def __init__(self, init_val: str = "0"):
+	def __init__(self, init_val: str = "0", addr: str or None = None):
 
-		self._addr = Locator.med_vars.get()
-		Locator.med_vars.alloc(self._addr)
-		self.set(NumRaw(init_val))
+		self._addr = Locator.med_vars.get_allocated() if addr is None else addr
+		if addr is None: self.set(NumRaw(init_val))
 
 	@property
 	def addr(self) -> str:
@@ -513,6 +520,15 @@ class MedVar(Var):
 
 	def __del__(self):
 		Locator.med_vars.free(self._addr)
+
+	def ref(self) -> MedVar:
+		return MedVar(self._addr)
+
+	def small_ref(self) -> SmallVar:
+		return SmallVar(self._addr)
+
+	def deref(self) -> MedVar:
+		return MedVar(addr=self.val)
 
 class StructMember(Var):
 
@@ -613,6 +629,14 @@ class For(ControlFlow):
 		self._end: NumVal = end_
 		self._step: NumVal or None = step
 
+	def __enter__(self) -> For:
+		Locator.target_code.write_ln(self.introduction)
+		return self
+
+	@property
+	def var(self) -> SmallVar:
+		return self._svar
+
 	@property
 	def introduction(self) -> str:
 		return f"For({self._svar.val},{get_num_val(self._start)},{get_num_val(self._end)}" + (f",{get_num_val(self._step)}" if self._step is not None else "")
@@ -654,3 +678,32 @@ def Input(prompt: String or StringConst, var: Var or String):
 
 true = Const(1)
 false = Const(0)
+
+class Array(Var):
+
+	class NoVal(Exception): ...
+
+	def __init__(self, size: NumVal):
+
+		self._size: NumVal = size
+		self._lsize: int = eval(get_num_val(size))
+		self._addrs: list[str] = [Locator.med_vars.get_allocated() for _ in range(self._lsize)]
+
+		with For(..., Const(1), Const(self._lsize)) as forloop:
+			wraw(f"0{ASS}⌊RAM({forloop.var.val}")
+
+	@property
+	def addr(self) -> str:
+		return self._addrs[0]
+
+	@property
+	def val(self) -> str:
+		raise self.NoVal
+
+	def __getitem__(self, key: NumVal) -> MedVar:
+		return MedVar(addr=get_num_val(Const(self.addr) + key))
+
+	def __del__(self):
+
+		for addr in self._addrs:
+			Locator.med_vars.free(addr)
