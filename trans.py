@@ -760,14 +760,16 @@ class Array(Var):
 
 	class NoVal(Exception): ...
 
-	def __init__(self, size: NumVal):
+	def __init__(self, size: NumVal, ref_type: RefType = (RefTypeUnit.no_ref,), _init: bool = True):
 
 		self._size: NumVal = size
+		self._ref_type: RefType = ref_type
 		self._lsize: int = eval(get_num_val(size))
 		self._addrs: list[str] = [Locator.med_vars.get_allocated() for _ in range(self._lsize)]
 
-		with For(..., Const(1), Const(self._lsize)) as forloop:
-			wraw(f"0{ASS}⌊RAM({forloop.var.val}")
+		if _init:
+			with For(..., Const(1), Const(self._lsize)) as forloop:
+				wraw(f"0{ASS}⌊RAM({forloop.var.val}")
 
 	@property
 	def addr(self) -> str:
@@ -778,9 +780,18 @@ class Array(Var):
 		raise self.NoVal
 
 	def __getitem__(self, key: NumVal) -> MedVar:
-		return MedVar(addr=get_num_val(Const(self.addr) + key))
+		return MedVar(addr=get_num_val(Const(self.addr) + key), ref_type=self._ref_type)
 
 	def __del__(self):
 
 		for addr in self._addrs:
 			Locator.med_vars.free(addr)
+
+	def clone(self) -> Array:
+
+		clone = Array(self._size, self._ref_type, _init=False)
+
+		with For(..., Const(1), Const(self._lsize)) as fl:
+			clone[fl.var.val].set(self[fl.var.val])
+
+		return clone
