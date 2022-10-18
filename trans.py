@@ -182,6 +182,32 @@ class RefTypeUnit(Enum):
 
 RefType = Tuple[RefTypeUnit]
 
+def read_ref_type(expr: NumVal) -> RefType:
+
+	if isinstance(expr, (SmallVar, MedVar)):
+		return expr.ref_type
+
+	else:
+		return (RefTypeUnit.no_ref,)
+
+class CannotDeref(Exception): ...
+
+def deref(var: Var) -> Union[MedVar, Struct]:
+
+	ref_type = read_ref_type(var)
+
+	if ref_type[-1] == RefTypeUnit.med_var:
+		return MedVar(addr=var.val)
+
+	elif ref_type[-1] == RefTypeUnit.struct_instance:
+
+		addr_bearer = SmallVar()
+		addr_bearer.set(var.val)
+		return Struct(addr=addr_bearer.val) # the val will be used as a SmallVar addr
+
+	else:
+		raise CannotDeref(f"Cannot dereference an expression with reference type {ref_type}")
+
 NumVal = Union[Var, "NumOp"]
 
 class NumOp:
@@ -485,30 +511,6 @@ class NumRaw(Var):
 	@property
 	def val(self) -> str:
 		return self._text
-
-class HasRefType(Protocol):
-
-	@property
-	def ref_type(self) -> RefType: ...
-
-	@property
-	def val(self) -> str: ...
-
-class CannotDeref(Exception): ...
-
-def deref(var: HasRefType) -> Union[MedVar, Struct]:
-
-	if var.ref_type == RefType.med_var:
-		return MedVar(addr=var.val)
-
-	elif var.ref_type == RefType.struct_instance:
-
-		addr_bearer = SmallVar()
-		addr_bearer.set(var.val)
-		return Struct(addr=addr_bearer.val) # the val will be used as a SmallVar addr
-
-	else:
-		raise CannotDeref(f"Cannot dereference var with reference type {var.ref_type}")
 
 class SmallVar(Var):
 
