@@ -1,11 +1,12 @@
 #encoding: utf-8
 
 from __future__ import annotations
+from enum import Enum
 from io import TextIOWrapper
 from math import gcd
 
 from string import ascii_uppercase
-from typing import Any, Tuple, Union
+from typing import Any, Protocol, Tuple, Union
 
 ASS = "→"
 L = "⌊"
@@ -173,6 +174,14 @@ class Var(BaseVar):
 	def __invert__(self) -> Not:
 		return Not(self)
 
+class RefTypeUnit(Enum):
+
+	no_ref = "no ref"
+	med_var = "med var"
+	struct_instance = "struct instance"
+
+RefType = Tuple[RefTypeUnit]
+
 NumVal = Union[Var, "NumOp"]
 
 class NumOp:
@@ -223,8 +232,6 @@ class NumOp:
 
 	def __invert__(self) -> Not:
 		return Not(self)
-
-# =≠>≥<≤, et , ou ,non(
 
 class ExprRoot(NumOp):
 
@@ -479,15 +486,44 @@ class NumRaw(Var):
 	def val(self) -> str:
 		return self._text
 
+class HasRefType(Protocol):
+
+	@property
+	def ref_type(self) -> RefType: ...
+
+	@property
+	def val(self) -> str: ...
+
+class CannotDeref(Exception): ...
+
+def deref(var: HasRefType) -> Union[MedVar, Struct]:
+
+	if var.ref_type == RefType.med_var:
+		return MedVar(addr=var.val)
+
+	elif var.ref_type == RefType.struct_instance:
+
+		addr_bearer = SmallVar()
+		addr_bearer.set(var.val)
+		return Struct(addr=addr_bearer.val) # the val will be used as a SmallVar addr
+
+	else:
+		raise CannotDeref(f"Cannot dereference var with reference type {var.ref_type}")
+
 class SmallVar(Var):
 
-	def __init__(self, init_val: str = None):
+	def __init__(self, init_val: str = None, ref_type: RefType = (RefTypeUnit.no_ref,)):
 
-		self._addr = Locator.small_vars.get()
+		self._ref_type: RefType = ref_type
+		self._addr: str = Locator.small_vars.get()
 		Locator.small_vars.alloc(self._addr)
 
 		if init_val is not None:
 			self.set(NumRaw(init_val))
+
+	@property
+	def ref_type(self) -> RefType:
+		return self._ref_type
 
 	@property
 	def addr(self) -> str:
@@ -500,15 +536,25 @@ class SmallVar(Var):
 	def __del__(self):
 		Locator.small_vars.free(self._addr)
 
-	def deref(self) -> MedVar:
-		return MedVar(addr=self.val)
+	def clone(self) -> SmallVar:
+		return SmallVar(init_val=self.val, ref_type=self._ref_type)
 
 class MedVar(Var):
 
-	def __init__(self, init_val: str = "0", addr: str or None = None):
+	def __init__(self, init_val: str = "0", addr: str or None = None, ref_type: RefType = (RefTypeUnit.no_ref,)):
 
-		self._addr = Locator.med_vars.get_allocated() if addr is None else addr
-		if addr is None: self.set(NumRaw(init_val))
+		self._ref_type: RefType = ref_type
+
+		if addr is None:
+			self._addr: str = Locator.med_vars.get_allocated()
+			self.set(NumRaw(init_val))
+
+		else:
+			self._addr: str = addr
+
+	@property
+	def ref_type(self) -> RefType:
+		return self._ref_type
 
 	@property
 	def addr(self) -> str:
@@ -522,13 +568,13 @@ class MedVar(Var):
 		Locator.med_vars.free(self._addr)
 
 	def ref(self) -> MedVar:
-		return MedVar(self._addr)
+		return MedVar(self._addr, ref_type=self._ref_type + (RefTypeUnit.med_var,))
 
 	def small_ref(self) -> SmallVar:
-		return SmallVar(self._addr)
+		return SmallVar(self._addr, ref_type=self._ref_type + (RefTypeUnit.med_var,))
 
-	def deref(self) -> MedVar:
-		return MedVar(addr=self.val)
+	def clone(self) -> MedVar:
+		return MedVar(init_val=self.val, ref_type=self._ref_type)
 
 class StructMember(Var):
 
@@ -553,16 +599,41 @@ def init_mem():
 
 class Struct(Var):
 
-	def __init__(self, init_vals: dict[str, NumVal]):
+	class CannotFindMember(Exception): ...
 
-		self._addr = SmallVar()
-		Locator.target_code.write_ln("{" + ",".join(ExprRoot(v).simplified_root().val for v in init_vals.values()))
-		Locator.target_code.write_ln("prgmHNALLOC")
-		self._addr.set(NumRaw("Rep"))
-		self._members: dict[str, StructMember] = {k: StructMember(self._addr.val, str(n)) for n, k in enumerate(init_vals.keys())}
+	def __init__(self, init_vals: tuple[tuple[str, NumVal]] = None, addr: str or None = None):
+
+		if init_vals is None: init_vals = {}
+
+		if addr is None:
+
+			self._addr = SmallVar()
+			Locator.target_code.write_ln("{" + ",".join(ExprRoot(v).simplified_root().val for v in init_vals.values()))
+			Locator.target_code.write_ln("prgmHNALLOC")
+			self._addr.set(NumRaw("Rep"))
+
+		else:
+
+			self._addr = SmallVar(addr)
+
+		self._members: tuple[tuple[str, StructMember]] = tuple((k, StructMember(self._addr.val, str(n))) for n, (k, _) in enumerate(init_vals))
+
+	def clone(self) -> Struct:
+
+		clone = Struct({k: Const(0) for k in self._members})
+
+		with For(..., Const(0), Const(len(self._members) - 1)) as fl:
+			StructMember(clone.addr, fl.var.val).set(StructMember(self.addr, fl.var.val))
+
+		return clone
 
 	def get_member(self, name: str) -> StructMember:
-		return self._members[name]
+		
+		for lname, member in self._members:
+			if lname == name:
+				return member
+
+		raise self.CannotFindMember(name)
 
 	@property
 	def addr(self) -> str:
@@ -575,6 +646,12 @@ class Struct(Var):
 	def __del__(self):
 		Locator.target_code.write_ln(f"0{ASS}⌊ADR({self._addr.val})")
 		del self._addr
+
+	def ref(self) -> MedVar:
+		return MedVar(self._addr.val, ref_type=(RefTypeUnit.no_ref, RefTypeUnit.struct_instance))
+
+	def small_ref(self) -> SmallVar:
+		return SmallVar(self._addr.val, ref_type=(RefTypeUnit.no_ref, RefTypeUnit.struct_instance))
 
 def wraw(text: str):
 	Locator.target_code.write_ln(text)
