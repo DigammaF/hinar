@@ -567,7 +567,9 @@ class MedVar(Var):
 		return f"⌊RAM({self._addr})"
 
 	def __del__(self):
-		Locator.med_vars.free(self._addr)
+
+		if self._ref_type == (RefTypeUnit.no_ref,):
+			Locator.med_vars.free(self._addr)
 
 	def ref(self) -> MedVar:
 		return MedVar(self._addr, ref_type=self._ref_type + (RefTypeUnit.med_var,))
