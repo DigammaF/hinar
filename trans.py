@@ -179,12 +179,13 @@ class RefTypeUnit(Enum):
 	no_ref = "no ref"
 	med_var = "med var"
 	struct_instance = "struct instance"
+	struct_member = "struct member"
 
 RefType = Tuple[RefTypeUnit]
 
 def read_ref_type(expr: NumVal) -> RefType:
 
-	if isinstance(expr, (SmallVar, MedVar)):
+	if isinstance(expr, (SmallVar, MedVar, StructMember, RamAccess)):
 		return expr.ref_type
 
 	else:
@@ -192,18 +193,21 @@ def read_ref_type(expr: NumVal) -> RefType:
 
 class CannotDeref(Exception): ...
 
-def deref(var: Var) -> Union[MedVar, Struct]:
+def deref(var: Var) -> Union[MedVar, Struct, StructMember]:
 
 	ref_type = read_ref_type(var)
 
 	if ref_type[-1] == RefTypeUnit.med_var:
-		return MedVar(addr=var.val)
+		return MedVar(addr=var.val, ref_type=ref_type[:-1])
 
 	elif ref_type[-1] == RefTypeUnit.struct_instance:
 
 		addr_bearer = SmallVar()
 		addr_bearer.set(var.val)
 		return Struct(addr=addr_bearer)
+
+	elif ref_type[-1] == RefTypeUnit.struct_member:
+		return RamAccess(var.val, ref_type[:-1])
 
 	else:
 		raise CannotDeref(f"Cannot dereference an expression with reference type {ref_type}")
@@ -583,20 +587,59 @@ class MedVar(Var):
 	def clone(self) -> MedVar:
 		return MedVar(init_val=self.val, ref_type=self._ref_type)
 
+class RamAccess(Var):
+
+	def __init__(self, addr: str, ref_type: RefType = (RefTypeUnit.no_ref,)):
+
+		self._ref_type: RefType = ref_type
+		self._addr: str = addr
+
+	@property
+	def ref_type(self) -> RefType:
+		return self._ref_type
+
+	@property
+	def addr(self) -> str:
+		return self._addr
+
+	@property
+	def val(self) -> str:
+		return f"⌊RAM({self._addr})"
+
+	def ref(self) -> MedVar:
+		return MedVar(self._addr, ref_type=self._ref_type + (RefTypeUnit.med_var,))
+
+	def small_ref(self) -> SmallVar:
+		return SmallVar(self._addr, ref_type=self._ref_type + (RefTypeUnit.med_var,))
+
+	def clone(self) -> MedVar:
+		return RamAccess(self._addr, ref_type=self._ref_type)
+
 class StructMember(Var):
 
-	def __init__(self, struct_addr: str, index: str):
+	def __init__(self, struct_addr: str, index: str, ref_type: RefType = (RefTypeUnit.no_ref,)):
 
+		self._ref_type = ref_type
 		self._struct_addr: str = struct_addr
 		self._index: str = index
 
 	@property
+	def ref_type(self) -> RefType:
+		return self._ref_type
+
+	@property
 	def addr(self) -> str:
-		return f"(⌊ADR({self._struct_addr})+{self._index})"
+		return f"(⌊ADR({self._struct_addr})+{self._index})" if self._index else f"⌊ADR({self._struct_addr})"
 
 	@property
 	def val(self) -> str:
 		return f"⌊DAT{self.addr}"
+
+	def ref(self) -> MedVar:
+		return MedVar(self.addr, ref_type=self._ref_type + (RefTypeUnit.struct_member))
+
+	def small_ref(self) -> SmallVar:
+		return SmallVar(self.addr, self._ref_type + (RefTypeUnit.struct_member))
 
 def defrag_mem():
 	Locator.target_code.write_ln("prgmHNDEFRAG")
