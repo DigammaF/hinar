@@ -809,6 +809,7 @@ false = Const(0)
 class Array(Var):
 
 	class NoVal(Exception): ...
+	class OutOfBounds(Exception): ...
 
 	def __init__(self, size: NumVal, ref_type: RefType = (RefTypeUnit.no_ref,), _init: bool = True):
 
@@ -830,6 +831,10 @@ class Array(Var):
 		raise self.NoVal
 
 	def __getitem__(self, key: NumVal) -> MedVar:
+
+		if isinstance(v := get_num_val(key), Const) and float(v.val) > self._lsize:
+			raise self.OutOfBounds(f"{v.val} > {self._lsize}")
+
 		return MedVar(addr=get_num_val(Const(self.addr) + key), ref_type=self._ref_type)
 
 	def __del__(self):
