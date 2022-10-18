@@ -6,7 +6,7 @@ from io import TextIOWrapper
 from math import gcd
 
 from string import ascii_uppercase
-from typing import Any, Protocol, Tuple, Union
+from typing import Any, Tuple, Union
 
 ASS = "→"
 L = "⌊"
@@ -203,7 +203,7 @@ def deref(var: Var) -> Union[MedVar, Struct]:
 
 		addr_bearer = SmallVar()
 		addr_bearer.set(var.val)
-		return Struct(addr=addr_bearer.val) # the val will be used as a SmallVar addr
+		return Struct(addr=addr_bearer)
 
 	else:
 		raise CannotDeref(f"Cannot dereference an expression with reference type {ref_type}")
@@ -568,8 +568,11 @@ class MedVar(Var):
 
 	def __del__(self):
 
-		if self._ref_type == (RefTypeUnit.no_ref,):
+		try:
 			Locator.med_vars.free(self._addr)
+
+		except VarPlanner.ForeignElement: # tried to free a reference
+			pass # references don't need special clean up
 
 	def ref(self) -> MedVar:
 		return MedVar(self._addr, ref_type=self._ref_type + (RefTypeUnit.med_var,))
@@ -605,7 +608,7 @@ class Struct(Var):
 
 	class CannotFindMember(Exception): ...
 
-	def __init__(self, init_vals: tuple[tuple[str, NumVal]] = None, addr: str or None = None):
+	def __init__(self, init_vals: tuple[tuple[str, NumVal]] = None, addr: SmallVar or None = None):
 
 		if init_vals is None: init_vals = {}
 
@@ -618,7 +621,7 @@ class Struct(Var):
 
 		else:
 
-			self._addr = SmallVar(addr)
+			self._addr = addr
 
 		self._members: tuple[tuple[str, StructMember]] = tuple((k, StructMember(self._addr.val, str(n))) for n, (k, _) in enumerate(init_vals))
 

@@ -1,0 +1,16 @@
+Input "Quantité de nombres premiers à générer; ",A
+2→B
+While A
+1→C
+For(D,2,B
+If partEnt(B/D)=0: Then
+0→C
+B+1→D
+End
+End
+If C: Then
+A-1→A
+Disp B
+End
+B+1→B
+End
