@@ -114,8 +114,6 @@ class StringConst(BaseVar):
 
 class Var(BaseVar):
 
-	class RefTypeMismatch(Exception): ...
-
 	@property
 	def addr(self) -> str: ...
 
@@ -126,13 +124,6 @@ class Var(BaseVar):
 		return self.val
 
 	def set(self, val: NumVal):
-
-		self_ref_type = read_ref_type(self)
-		val_ref_type = read_ref_type(val)
-
-		if self_ref_type != val_ref_type:
-			raise self.RefTypeMismatch(f"Cannot assign {val} with reference type {val_ref_type} to {self} with reference type {self_ref_type}")
-
 		Locator.target_code.write_ln(f"{get_num_val(val)}→{self.val}")
 
 	def incr(self):
