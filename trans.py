@@ -126,20 +126,49 @@ class Var(BaseVar):
 	def decr(self):
 		self.set(self - Const(1))
 
-	def __add__(self, other):
+	def simplified(self, ctx: list[NumOp]) -> NumVal:
+		return self
+
+	def __add__(self, other) -> Paren:
 		return Paren(Addition(self, other))
 
-	def __sub__(self, other):
+	def __sub__(self, other) -> Paren:
 		return Paren(Substraction(self, other))
 
-	def __mul__(self, other):
+	def __mul__(self, other) -> Paren:
 		return Paren(Multiplication(self, other))
 
-	def __truediv__(self, other):
+	def __truediv__(self, other) -> Paren:
 		return Paren(Division(self, other))
 
-# Num Val: Var|Paren|Addition|Substraction|Multiplication|Division
-NumVal = Union[Var, "Paren", "Addition", "Substraction", "Multiplication", "Division"]
+	def __eq__(self, other) -> Paren:
+		return Paren(BinLogicOp("=", self, other))
+
+	def __neq__(self, other) -> Paren:
+		return Paren(BinLogicOp("≠", self, other))
+
+	def __gt__(self, other) -> Paren:
+		return Paren(BinLogicOp(">", self, other))
+
+	def __ge__(self, other) -> Paren:
+		return Paren(BinLogicOp("≥", self, other))
+
+	def __lt__(self, other) -> Paren:
+		return Paren(BinLogicOp("<", self, other))
+
+	def __le__(self, other) -> Paren:
+		return Paren(BinLogicOp("≤", self, other))
+
+	def __and__(self, other) -> Paren:
+		return Paren(BinLogicOp(" et ", self, other))
+
+	def __or__(self, other) -> Paren:
+		return Paren(BinLogicOp(" ou ", self, other))
+
+	def __invert__(self) -> Not:
+		return Not(self)
+
+NumVal = Union[Var, "NumOp"]
 
 class NumOp:
 	
@@ -151,17 +180,46 @@ class NumOp:
 	@property
 	def val(self) -> str: ...
 
-	def __add__(self, other):
+	def __add__(self, other) -> Paren:
 		return Paren(Addition(self, other))
 
-	def __sub__(self, other):
+	def __sub__(self, other) -> Paren:
 		return Paren(Substraction(self, other))
 
-	def __mul__(self, other):
+	def __mul__(self, other) -> Paren:
 		return Paren(Multiplication(self, other))
 
-	def __truediv__(self, other):
+	def __truediv__(self, other) -> Paren:
 		return Paren(Division(self, other))
+
+	def __eq__(self, other) -> Paren:
+		return Paren(BinLogicOp("=", self, other))
+
+	def __neq__(self, other) -> Paren:
+		return Paren(BinLogicOp("≠", self, other))
+
+	def __gt__(self, other) -> Paren:
+		return Paren(BinLogicOp(">", self, other))
+
+	def __ge__(self, other) -> Paren:
+		return Paren(BinLogicOp("≥", self, other))
+
+	def __lt__(self, other) -> Paren:
+		return Paren(BinLogicOp("<", self, other))
+
+	def __le__(self, other) -> Paren:
+		return Paren(BinLogicOp("≤", self, other))
+
+	def __and__(self, other) -> Paren:
+		return Paren(BinLogicOp(" et ", self, other))
+
+	def __or__(self, other) -> Paren:
+		return Paren(BinLogicOp(" ou ", self, other))
+
+	def __invert__(self) -> Not:
+		return Not(self)
+
+# =≠>≥<≤, et , ou ,non(
 
 class ExprRoot(NumOp):
 
@@ -204,6 +262,21 @@ class Paren(NumOp):
 def pa(expr: NumVal) -> Paren:
 	return Paren(expr)
 
+class BinLogicOp(NumOp):
+
+	def __init__(self, ti_sym: str, a: NumVal, b: NumVal):
+
+		self._ti_sym: str = ti_sym
+		self._a = a
+		self._b = b
+
+	@property
+	def val(self) -> str:
+		return f"{get_num_val(self._a)}{self._ti_sym}{get_num_val(self._b)}"
+
+	def simplified(self, ctx: list[NumOp]) -> NumVal:
+		return BinLogicOp(self._ti_sym, self._a.simplified(ctx + [self]), self._b.simplified(ctx + [self]))
+
 class Neg(NumOp):
 
 	def __init__(self, a: NumVal):
@@ -229,6 +302,31 @@ class Neg(NumOp):
 	def val(self) -> str:
 		return f"0-{self._a}"
 
+class Not(NumOp):
+
+	def __init__(self, a: NumVal):
+
+		self._a: NumVal = a
+
+	def simplified(self, ctx: list[NumOp]) -> NumVal:
+
+		a = self._a.simplified(ctx + [self])
+
+		if isinstance(a, Not):
+			
+			child = a.child
+			return child if isinstance(child, Var) else child.simplified(ctx)
+
+		return Not(a)
+
+	@property
+	def child(self) -> NumVal:
+		return self._a
+
+	@property
+	def val(self) -> str:
+		return f"non({self._a})"
+
 class Addition(NumOp):
 
 	def __init__(self, a: NumVal, b: NumVal):
@@ -238,8 +336,8 @@ class Addition(NumOp):
 
 	def simplified(self, ctx: list[NumOp]) -> NumVal:
 
-		a = self._a if isinstance(self._a, Var) else self._a.simplified(ctx + [self])
-		b = self._b if isinstance(self._b, Var) else self._b.simplified(ctx + [self])
+		a = self._a.simplified(ctx + [self])
+		b = self._b.simplified(ctx + [self])
 
 		if a.val == "0": return b
 		if b.val == "0": return a
@@ -262,8 +360,8 @@ class Substraction(NumOp):
 
 	def simplified(self, ctx: list[NumOp]) -> NumVal:
 
-		a = self._a if isinstance(self._a, Var) else self._a.simplified(ctx + [self])
-		b = self._b if isinstance(self._b, Var) else self._b.simplified(ctx + [self])
+		a = self._a.simplified(ctx + [self])
+		b = self._b.simplified(ctx + [self])
 
 		if a.val == "0": return Neg(b).simplified(ctx)
 		if b.val == "0": return a
@@ -286,8 +384,8 @@ class Multiplication(NumOp):
 
 	def simplified(self, ctx: list[NumOp]) -> NumVal:
 
-		a = self._a if isinstance(self._a, Var) else self._a.simplified(ctx + [self])
-		b = self._b if isinstance(self._b, Var) else self._b.simplified(ctx + [self])
+		a = self._a.simplified(ctx + [self])
+		b = self._b.simplified(ctx + [self])
 
 		if a.val == "0" or b.val == "0": return Const("0")
 		if a.val == "1": return b
@@ -311,8 +409,8 @@ class Division(NumOp):
 
 	def simplified(self, ctx: list[NumOp]) -> NumVal:
 
-		a = self._a if isinstance(self._a, Var) else self._a.simplified(ctx + [self])
-		b = self._b if isinstance(self._b, Var) else self._b.simplified(ctx + [self])
+		a = self._a.simplified(ctx + [self])
+		b = self._b.simplified(ctx + [self])
 
 		if b.val == "0": raise ValueError("cannot divide by zero!")
 
@@ -549,12 +647,7 @@ class If(ControlFlow):
 		return "End"
 
 def Disp(var: NumVal or String or StringConst):
-	
-	if isinstance(var, NumVal):
-		wraw("Disp " + get_num_val(var))
-
-	elif isinstance(var, (String, StringConst)):
-		wraw("Disp " + var.val)
+	wraw("Disp " + get_num_val(var))
 
 def Input(prompt: String or StringConst, var: Var or String):
 	wraw(f"Input {prompt.val},{var.val}")
