@@ -571,8 +571,8 @@ class MedVar(Var):
 		try:
 			Locator.med_vars.free(self._addr)
 
-		except VarPlanner.ForeignElement: # tried to free a reference
-			pass # references don't need special clean up
+		except VarPlanner.ForeignElement: # tried to free a dereference
+			pass # dereferences don't need special clean up
 
 	def ref(self) -> MedVar:
 		return MedVar(self._addr, ref_type=self._ref_type + (RefTypeUnit.med_var,))
