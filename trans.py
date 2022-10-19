@@ -1,16 +1,28 @@
 #encoding: utf-8
 
 from __future__ import annotations
-from curses import init_pair
+import sys
+from dataclasses import dataclass
 from enum import Enum
 from io import TextIOWrapper
 from math import gcd
 
 from string import ascii_uppercase
-from typing import Any, Tuple, Union
+from traceback import TracebackException
+from types import TracebackType
+from typing import Any, Tuple, Type, Union
 
 ASS = "→"
 L = "⌊"
+
+def my_handler(e_type: Type[BaseException], e: BaseException, tr: TracebackType):
+	
+	tb = TracebackException(e_type, e, tr)
+	msg = "\n".join(tb.format_exception_only())
+	print(f"{str(Locator.file_context)} {msg}")
+
+def settle_exception_handler():
+	sys.excepthook = my_handler
 
 class VarPlanner:
 
@@ -81,6 +93,10 @@ class BaseLocator:
 		self.med_vars = VarPlanner("med vars", list(str(n) for n in range(1, 999 + 1)))
 		self.string_vars = VarPlanner("string vars", list(f"Chn{str(n)}" for n in range(9 + 1)))
 		self.target_code = TargetCode()
+		self.file_context: FileContext = FileContext("?", 0)
+
+	def set_file_context(self, file_context: FileContext):
+		self.file_context = file_context
 
 Locator = BaseLocator()
 
@@ -921,3 +937,11 @@ class Vector(Var):
 		v = SmallVar(self[self._head].val, ref_type=self._ref_type)
 		self._head.decr()
 		return v
+
+@dataclass
+class FileContext:
+	filename: str
+	line_nbr: int
+
+	def __str__(self) -> str:
+		return f"{self.filename}@{str(self.line_nbr)}"
