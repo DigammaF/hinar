@@ -1,6 +1,7 @@
 #encoding: utf-8
 
 from __future__ import annotations
+from curses import init_pair
 from enum import Enum
 from io import TextIOWrapper
 from math import gcd
@@ -642,10 +643,10 @@ class StructMember(Var):
 		return SmallVar(self.addr, self._ref_type + (RefTypeUnit.struct_member))
 
 def defrag_mem():
-	Locator.target_code.write_ln("prgmHNDEFRAG")
+	call("HNDEFRAG")
 
 def init_mem():
-	Locator.target_code.write_ln("prgmHNINIT")
+	call("HNINIT")
 
 class Struct(Var):
 
@@ -656,14 +657,10 @@ class Struct(Var):
 		if init_vals is None: init_vals = {}
 
 		if addr is None:
-
 			self._addr = SmallVar()
-			Locator.target_code.write_ln("{" + ",".join(ExprRoot(v).simplified_root().val for v in init_vals.values()))
-			Locator.target_code.write_ln("prgmHNALLOC")
-			self._addr.set(NumRaw("Rep"))
+			call("HNALLOC", self._addr, *list(get_num_val(v) for _, v in init_vals))
 
 		else:
-
 			self._addr = addr
 
 		self._members: tuple[tuple[str, StructMember]] = tuple((k, StructMember(self._addr.val, str(n))) for n, (k, _) in enumerate(init_vals))
@@ -694,7 +691,7 @@ class Struct(Var):
 		return f"⌊DAT{self.addr}"
 
 	def __del__(self):
-		Locator.target_code.write_ln(f"0{ASS}⌊ADR({self._addr.val})")
+		Locator.target_code.write_ln(f"0{ASS}⌊ADR({self._addr.val}")
 		del self._addr
 
 	def ref(self) -> MedVar:
@@ -705,6 +702,20 @@ class Struct(Var):
 
 def wraw(text: str):
 	Locator.target_code.write_ln(text)
+
+def call(name: str, ret: Var or None = None, *params: NumVal):
+	
+	if params:
+		if len(params) == 1:
+			wraw(get_num_val(params[0]))
+
+		else:
+			wraw("{" + ",".join(get_num_val(e) for e in params))
+
+	wraw(f"prgm{name}")
+
+	if ret is not None:
+		ret.set(NumRaw("Rep"))
 
 class ControlFlow:
 
@@ -850,3 +861,63 @@ class Array(Var):
 			clone[fl.var.val].set(self[fl.var.val])
 
 		return clone
+
+def intpart(v: NumVal) -> NumRaw:
+	return NumRaw(f"partEnt({v})")
+
+def panic(text: String or StringConst):
+	Disp(text)
+	wraw("Stop")
+
+class Vector(Var):
+
+	def __init__(self, initial_size: NumVal, ref_type: RefType = (RefTypeUnit.no_ref,)):
+
+		self._ref_type = ref_type
+		self._initial_size: NumVal = initial_size
+		self._size: MedVar = MedVar(initial_size)
+		self._head: MedVar = MedVar()
+
+		self._addr = MedVar()
+		call("HNALLVEC", self._addr, get_num_val(initial_size))
+
+	def __getitem__(self, key: NumVal):
+		return RamAccess(get_num_val(self._addr + key), ref_type=self._ref_type)
+
+	def __del__(self):
+		Locator.target_code.write_ln(f"0{ASS}⌊ADR({self._addr.val})")
+		del self._addr
+
+	def clone(self) -> Vector:
+
+		clone = Vector(initial_size=self._initial_size, ref_type=self._ref_type)
+
+		with For(..., Const(0), self._size - 1) as fl:
+			clone[fl.var.val].set(self[fl.var.val])
+
+		return clone
+
+	def expand(self, new_size: NumVal):
+		
+		old_addr = SmallVar(self._addr.val)
+		call("HNALLVEC", self._addr, get_num_val(new_size))
+
+		with For(..., Const(0), self._size - 1) as fl:
+			RamAccess(self._addr + fl.var).set(self[fl.var])
+
+		wraw(f"0{ASS}{L}ADR({old_addr.val}")
+		del old_addr
+
+	def push(self, v: NumVal):
+		
+		with If(self._head == self._size):
+			self.expand(intpart(self._size*Const(1.1)) + 1)
+
+		self[self._head].set(v)
+		self._head.incr()
+
+	def pop(self) -> SmallVar:
+
+		v = SmallVar(self[self._head].val, ref_type=self._ref_type)
+		self._head.decr()
+		return v
