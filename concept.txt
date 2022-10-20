@@ -1,0 +1,70 @@
+
+my_var: num;
+my_long: long;
+my_ref: *num = *my_var;
+
+my_var = #my_ref;
+my_borrow = &my_var;
+
+my_array: num[10] = [0,1,2,3,4,5,6,7,8,9];
+my_vec: num<10> = <0,1,2,3,4,5,6,7,8,9>;
+dyn_vec: num<my_var>;
+my_string: string = "Hello!";
+
+const ans: num = 42;
+const name: string = "UwU";
+
+struct Car {
+	color: string,
+	speed: num,
+}
+
+const DEFAULT_SPEED: num = 70.0;
+my_car: Car = Car {color: "black", speed: 60.0};
+
+impl Car {
+	fn from_color(color: string) -> Self {
+		Car {color: color, speed: DEFAULT_SPEED}
+	}
+	fn honk(self: &Self) {
+		Disp("Honk!");
+	}
+}
+
+my_car.honk();
+other_car: Car = Car::from_color("red");
+
+trait HasSpeed {
+	fn get_speed(self: &Self) -> num;
+	fn speed_up(self: &Self, amount: num);
+}
+
+impl HasSpeed for Car {
+	fn get_speed(self: &Self) -> num {self.speed}
+	fn speed_up(self: Self, amount: num) {self.speed += amount;}
+}
+
+fn main() {
+	Disp("Returning 67");
+	67
+}
+
+fn greet(name: string) {
+	Disp("Hello " + name + "!");
+}
+
+fn plus(x: num) -> num {x + 1}
+
+// this is a comment
+/*
+
+	This is a longer comment
+
+ */
+
+if true {} else {}
+while true {}
+for (i, 0, 10) {} // 0 - 10
+for (i, 0, 10, 1) {}
+for (i, Range(10 + 1)) {} // 0 - 10
+for (_, Amount(10 + 1)) {} // 1 - 11

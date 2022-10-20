@@ -10,7 +10,7 @@ from math import gcd
 from string import ascii_uppercase
 from traceback import TracebackException
 from types import TracebackType
-from typing import Any, Tuple, Type, Union
+from typing import Any, Callable, Tuple, Type, Union
 
 ASS = "→"
 L = "⌊"
@@ -210,7 +210,7 @@ def read_ref_type(expr: NumVal) -> RefType:
 
 class CannotDeref(Exception): ...
 
-def deref(var: Var) -> Union[MedVar, Struct, StructMember]:
+def deref(var: Var) -> Union[MedVar, StructInstance, StructMember]:
 
 	ref_type = read_ref_type(var)
 
@@ -221,7 +221,7 @@ def deref(var: Var) -> Union[MedVar, Struct, StructMember]:
 
 		addr_bearer = SmallVar()
 		addr_bearer.set(var.val)
-		return Struct(addr=addr_bearer)
+		return StructInstance(addr=addr_bearer)
 
 	elif ref_type[-1] == RefTypeUnit.struct_member:
 		return RamAccess(var.val, ref_type[:-1])
@@ -500,6 +500,7 @@ def get_num_val(expr: NumVal) -> str:
 class Const(Var):
 
 	class NoAddr(Exception): ...
+	class CannotSetConstant(Exception): ...
 
 	def __init__(self, val: Any):
 
@@ -508,6 +509,16 @@ class Const(Var):
 
 		else:
 			self._val: str = str(val)
+
+	def set(self, val: NumVal):
+
+		simplified = ExprRoot(val).simplified_root()
+
+		if isinstance(simplified, Const):
+			Var.set(self, simplified)
+
+		else:
+			raise self.CannotSetConstant(f"Cannot set a constant to a value that is not known at compile time")
 
 	@property
 	def addr(self) -> str:
@@ -664,7 +675,7 @@ def defrag_mem():
 def init_mem():
 	call("HNINIT")
 
-class Struct(Var):
+class StructInstance(Var):
 
 	class CannotFindMember(Exception): ...
 
@@ -681,9 +692,9 @@ class Struct(Var):
 
 		self._members: tuple[tuple[str, StructMember]] = tuple((k, StructMember(self._addr.val, str(n))) for n, (k, _) in enumerate(init_vals))
 
-	def clone(self) -> Struct:
+	def clone(self) -> StructInstance:
 
-		clone = Struct({k: Const(0) for k in self._members})
+		clone = StructInstance({k: Const(0) for k in self._members})
 
 		with For(..., Const(0), Const(len(self._members) - 1)) as fl:
 			StructMember(clone.addr, fl.var.val).set(StructMember(self.addr, fl.var.val))
@@ -762,7 +773,7 @@ class While(ControlFlow):
 		return "End"
 
 def Range(size: NumVal) -> Tuple[NumVal, NumVal]:
-	return Const(0), size
+	return Const(0), get_num_val(size - Const(1))
 
 def Amount(n: NumVal) -> Tuple[NumVal, NumVal]:
 	return Const(1), n
@@ -873,7 +884,7 @@ class Array(Var):
 
 		clone = Array(self._size, self._ref_type, _init=False)
 
-		with For(..., Const(1), Const(self._lsize)) as fl:
+		with For(..., *Range(self._size)) as fl:
 			clone[fl.var.val].set(self[fl.var.val])
 
 		return clone
@@ -908,7 +919,7 @@ class Vector(Var):
 
 		clone = Vector(initial_size=self._initial_size, ref_type=self._ref_type)
 
-		with For(..., Const(0), self._size - 1) as fl:
+		with For(..., *Range(self._size)) as fl:
 			clone[fl.var.val].set(self[fl.var.val])
 
 		return clone
@@ -918,23 +929,23 @@ class Vector(Var):
 		old_addr = SmallVar(self._addr.val)
 		call("HNALLVEC", self._addr, get_num_val(new_size))
 
-		with For(..., Const(0), self._size - 1) as fl:
+		with For(..., *Range(self._size)) as fl:
 			RamAccess(self._addr + fl.var).set(self[fl.var])
 
 		wraw(f"0{ASS}{L}ADR({old_addr.val}")
 		del old_addr
 
 	def push(self, v: NumVal):
-		
+
 		with If(self._head == self._size):
-			self.expand(intpart(self._size*Const(1.1)) + 1)
+			self.expand(intpart(self._size*Const(1.1)) + Const(1))
 
 		self[self._head].set(v)
 		self._head.incr()
 
 	def pop(self) -> SmallVar:
 
-		v = SmallVar(self[self._head].val, ref_type=self._ref_type)
+		v = SmallVar(self[self._head - Const(1)].val, ref_type=self._ref_type)
 		self._head.decr()
 		return v
 
@@ -945,3 +956,97 @@ class FileContext:
 
 	def __str__(self) -> str:
 		return f"{self.filename}@{str(self.line_nbr)}"
+
+class CoreType(Enum):
+
+	long = "long"
+	num = "num"
+	struct_instance = "struct instance"
+
+@dataclass
+class VarType:
+	ref_type: RefType
+	core_type: CoreType
+	borrowed: bool
+
+	def __eq__(self, other: VarType) -> bool:
+		return self.ref_type == other.ref_type and self.core_type == other.core_type and self.borrowed == other.borrowed
+
+	def clone(self) -> VarType:
+		return VarType(ref_type=self.ref_type, core_type=self.core_type, borrowed=self.borrowed)
+
+@dataclass
+class StructInstanceType(VarType):
+	struct_type: StructType
+
+	def __eq__(self, other: StructInstanceType) -> bool:
+		return VarType.__eq__(self, other) and isinstance(other, StructInstanceType) and self.struct_type == other.struct_type
+
+	def clone(self) -> StructInstanceType:
+		return StructInstanceType(ref_type=self.ref_type, core_type=self.core_type, borrowed=self.borrowed, struct_type=self.struct_type)
+
+class IncoherentType(Exception): ...
+
+def get_fmt_type(t: VarType) -> str:
+
+	if not len(t.ref_type): raise IncoherentType
+
+	if t.borrowed:
+		
+		inner_t = t.clone()
+		inner_t.borrowed = False
+		return "&" + get_fmt_type(inner_t)
+
+	if t.ref_type[-1] == RefTypeUnit.no_ref:
+
+		if len(t.ref_type) != 1: raise IncoherentType
+		
+		if t.core_type == CoreType.long:
+			return "long"
+
+		elif t.core_type == CoreType.num:
+			return "num"
+
+		elif t.core_type == CoreType.struct_instance:
+
+			assert isinstance(t, StructInstanceType)
+			return t.struct_type.name
+
+		else:
+			raise Exception(f"cant get name of core type {t.core_type}")
+
+	else:
+		
+		inner_t = t.clone()
+		inner_t.ref_type = inner_t.ref_type[:-1]
+		return "*" + get_fmt_type(inner_t)
+
+def get_fn_signature(name: str, ret: VarType, args: list[VarType]) -> str:
+	return f"{name} (" + ", ".join(get_fmt_type(e) for e in args) + f") -> {get_fmt_type(ret)}"
+
+class StructType:
+	
+	def __init__(self, name: str, members: tuple[tuple[str, VarType]]):
+		
+		self._members: tuple[tuple[str, VarType]] = members
+		self._name: str = name
+		self._methods: dict[str, Callable] = {}
+
+	def get_signature(self) -> str:
+		return self._name + " {\n" + "\n\t".join(f"{name}: {get_fmt_type(t)}" for (name, t) in self._members) + "\n} {" + "\n\t".join(name for name in self._methods) + "\n}"
+
+	def __eq__(self, other: StructType) -> bool:
+		return self.get_signature() == other.get_signature()
+
+	@property
+	def name(self) -> str:
+		return self._name
+
+	def bind_method(self, signature: str, fn: Callable):
+		self._methods[signature] = fn
+
+	def get_method(self, signature: str) -> Callable:
+		return self._methods[signature]
+
+class Trait:
+	pass
